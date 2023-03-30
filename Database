@@ -1,0 +1,203 @@
+create table SuperUser(
+	SU_ID varchar(6) not null,
+	SU_Name varchar(24) not null,
+	SU_Code varchar(32) not null,
+	SU_ActualName varchar(20),
+	SU_Gender varchar(7),
+	SU_Birth date,
+	SU_PhoneNumber varchar(11),
+	primary key(SU_ID));
+  
+  
+create table NormalUser(
+	NU_ID varchar(6) not null,
+	NU_Name varchar(24) not null,
+	NU_Code varchar(32) not null,
+	NU_ActualName varchar(20),
+	NU_Gender varchar(7),
+	NU_Birth date,
+	NU_PhoneNumber varchar(11),
+	primary key(NU_ID));
+  
+  
+create table Stock(
+	Book_ID varchar(6) not null,
+	ISBN varchar(20) not null,
+	Book_name varchar(20) not null,
+	Publisher varchar(20) not null,
+	Author varchar(20) not null,
+	Retail_price numeric(5,2),
+	Current_stocknum numeric(4) default 0,
+	primary key(Book_ID));
+  
+  
+create table PurchaseList(
+  Purchase_ID varchar(6) not null,
+	Book_ID varchar(6) not null,
+	ISBN varchar(17) not null,
+	Book_name varchar(20) not null,
+	Publisher varchar(20) not null,
+	Author varchar(20) not null,
+  Retail_price numeric(5,2),
+	Purchase_price numeric(5,2),
+	Purchase_num numeric(4) default 0,
+	Status varchar(3),
+	primary key(Purchase_ID));
+  
+  
+create table Bill(
+	Trading_ID varchar(6) not null,
+	Operation varchar(2) not null,
+	Amount numeric(10,2) not null,
+	Trading_date date not null,
+	primary key(Trading_ID));
+  
+  
+
+CREATE OR REPLACE function add_bill()
+returns trigger
+AS $$
+Begin
+Insert into Bill
+Values('Txxxxx','支出',new.purchase_price*new.purchase_num,current_date);
+	return null;
+end;
+$$ LANGUAGE plpgsql;
+
+
+
+create trigger payment after update of status on purchaselist
+for each row 
+when (old.status = '未付款' and new.status = '已付款')
+execute function add_bill();
+
+
+
+CREATE OR REPLACE function add_book()
+returns trigger
+AS $$
+begin
+if new.book_id not in (
+	Select book_id
+	From stock)
+then
+	Insert into Stock
+	Values(new.book_id,new.isbn,new.book_name,new.publisher,
+new.author,new.retail_price,new.purchase_num);
+elsif new.book_id in (
+	Select book_id
+	From stock)
+then
+	Update stock
+	Set current_stocknum = current_stocknum+new.purchase_num
+	Where stock.book_id=new.book_id;
+end if;
+return null;
+end;
+$$ LANGUAGE plpgsql;
+
+
+
+create trigger addstock after update of status on purchaselist
+for each row 
+when (old.status = '已付款' and new.status = '已入库')
+execute function add_book();
+
+
+CREATE OR REPLACE function earn_bill()
+returns trigger
+AS $$
+begin
+Insert into Bill
+Values('Txxxxx','收入',(old.current_stocknum-new.current_stocknum)*new.retail_price,current_date);
+	return null;
+end;
+$$ LANGUAGE plpgsql;
+
+
+
+create trigger buy_book after update of current_stocknum on stock
+for each row 
+when (old.current_stocknum > new.current_stocknum)
+execute function earn_bill();
+
+
+
+create PROCEDURE insert_purchaselist (Purchase_ID varchar(6),Book_ID varchar(6),
+									  ISBN varchar(17),Book_name varchar(20),
+									  Publisher varchar(20),Author varchar(20),
+									  Retail_price numeric(5,2), Purchase_price numeric(5,2),Purchase_num numeric(4),Status varchar(3))
+LANGUAGE plpgsql
+AS $$
+begin
+  INSERT INTO PurchaseList 
+  overriding system value
+  VALUES (insert_purchaselist.Purchase_ID,insert_purchaselist.book_id,
+		  insert_purchaselist.isbn,insert_purchaselist.book_name,
+		  insert_purchaselist.publisher,insert_purchaselist.author,insert_purchaselist.retail_price,		  insert_purchaselist.purchase_price,insert_purchaselist.purchase_num,insert_purchaselist.Status);
+end;
+$$;
+
+
+
+insert into SuperUser
+values('SU0001','SuperUserAlice','0b4e7a0e5fe84ad35fb5f95b9ceeac79','Alice',
+	 'female','1990-01-01','12345678910');
+insert into SuperUser
+values('SU0002','SuperUserBob','875f26fdb1cecf20ceb4ca028263dec6','Bob',
+	 'male','1995-10-30','12345678911');
+   
+   
+   
+ 
+insert into NormalUser
+values('NU0001','NormalUserCindy','c1f68ec06b490b3ecb4066b1b13a9ee9','Cindy',
+	 'female','1995-12-01','12345678912');
+insert into NormalUser
+values('NU0002','NormalUserDavid','980ac217c6b51e7dc41040bec1edfec8','David',
+	 'male','1992-06-30','12345678913');
+   
+   
+   
+insert into Stock
+values('B00001','978-7-5442-7698-6','你当像鸟飞往你的山','南海出版公司','塔拉·韦斯特弗',59.00,1000)；
+insert into Stock
+values('B00002','978-7-5399-8268-7','允许自己虚度时光','江苏凤凰文艺出版社','马德',35.00,1000)；
+insert into Stock
+values('B00003','978-7-111-49548-2','被讨厌的勇气','机械工业出版社','岸见一郎，古贺史健',55.00,1000)；
+insert into Stock
+values('B00004','978-7-5447-6650-0','杀死一只知更鸟','江苏译林出版社','哈珀',48.00,1000)；
+insert into Stock
+values('B00005','978-7-5399-9598-4','双城记','江苏凤凰文艺出版社','狄更斯',45.00,1000)；
+
+
+
+
+insert into PurchaseList
+values('P00001','B00001','978-7-5442-7698-6','你当像鸟飞往你的山','南海出版公司','塔拉·韦斯特弗',59.00,49.00,1000,'已入库');
+insert into PurchaseList
+values('P00002','B00002','978-7-5399-8268-7','允许自己虚度时光','江苏凤凰文艺出版社','马德',35.00,25.00,1000,'已入库');
+insert into PurchaseList
+values('P00003','B00003','978-7-111-49548-2','被讨厌的勇气','机械工业出版社','岸见一郎，古贺史健',55.00,45.00,1000,'已入库');
+insert into PurchaseList
+values('P00004','B00004','978-7-5447-6650-0','杀死一只知更鸟','江苏译林出版社','哈珀',48.00,38.00,1000,'已入库');
+insert into PurchaseList
+values('P00005','B00001','978-7-5442-7698-6','你当像鸟飞往你的山','南海出版公司','塔拉·韦斯特弗',59.00,49.00,1000,'未付款');
+
+
+
+
+insert into Bill
+values('T00001','支出','49000.00','2022-4-17');
+insert into Bill
+values('T00002','支出','25000.00','2022-4-17');
+insert into Bill
+values('T00003','支出','45000.00','2022-4-17');
+insert into Bill
+values('T00004','支出','38000.00','2022-4-17');
+
+
+
+
+
+
